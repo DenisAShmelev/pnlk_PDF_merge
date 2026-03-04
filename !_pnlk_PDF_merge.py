@@ -43,7 +43,7 @@ def create_timestamp_directory():
 def process_pdf_files():
     """
     Обрабатывает PDF-файлы:
-    - Объединяет файлы с одинаковым префиксом (если их > 1)
+    - Объединяет файлы с одинаковым префиксом (если их > 1 и номера от 1 до 100)
     - Копирует одиночные файлы в папку "готовые ранее" с оригинальным именем
     """
     # Определяем текущую рабочую директорию
@@ -54,8 +54,8 @@ def process_pdf_files():
     timestamp_dir = create_timestamp_directory()
     
     # Создаем папки для результатов внутри папки с временной меткой
-    output_dir = os.path.join(timestamp_dir, "объединенные")
-    single_files_dir = os.path.join(timestamp_dir, "готовые ранее")
+    output_dir = os.path.join(timestamp_dir, "Объединенные")
+    single_files_dir = os.path.join(timestamp_dir, "Одиночные")
     
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(single_files_dir, exist_ok=True)
@@ -105,14 +105,64 @@ def process_pdf_files():
         has_numbered_files = any(re.match(r'^.+-\d+\.pdf$', f) for f in files)
         
         if len(files) > 1 and has_numbered_files:
-            # Объединяем файлы группы (если их больше одного и они пронумерованы)
-            merged_count += process_group_merge(base_name, files, output_dir)
+            # Проверяем, что все файлы имеют номера в диапазоне [1-100] и начинаются с 1
+            if validate_numbered_files(files):
+                # Объединяем файлы группы (если они прошли валидацию)
+                merged_count += process_group_merge(base_name, files, output_dir)
+            else:
+                # Если не прошли валидацию, копируем как одиночные
+                print(f"\n⚠️ Группа '{base_name}' не прошла валидацию (номера должны быть от 1 до 100 и начинаться с 1).")
+                for pdf_file in files:
+                    copied_count += process_single_file(pdf_file, single_files_dir)
         else:
             # Копируем одиночный файл с оригинальным именем
             for pdf_file in files:
                 copied_count += process_single_file(pdf_file, single_files_dir)
     
     return merged_count, copied_count, timestamp_dir
+
+def validate_numbered_files(files):
+    """
+    Проверяет, что все файлы в группе:
+    1. Имеют номера в диапазоне [1-100]
+    2. Номера начинаются с 1 (без пропусков в начале)
+    """
+    # Извлекаем все номера из файлов
+    numbered_files = []
+    for f in files:
+        match = re.search(r'-(\d+)\.pdf$', f)
+        if match:
+            num = int(match.group(1))
+            if 1 <= num <= 100:
+                numbered_files.append((f, num))
+            else:
+                print(f"   ⚠️ Файл '{f}' имеет номер {num}, который вне диапазона [1-100]")
+                return False
+        else:
+            print(f"   ⚠️ Файл '{f}' не соответствует формату с номером")
+            return False
+    
+    if not numbered_files:
+        return False
+    
+    # Сортируем по номеру
+    numbered_files.sort(key=lambda x: x[1])
+    
+    # Проверяем, что первый номер равен 1
+    if numbered_files[0][1] != 1:
+        print(f"   ⚠️ Первый номер должен быть 1, но найден {numbered_files[0][1]}")
+        return False
+    
+    # Проверяем, что номера идут последовательно (без пропусков)
+    # Это опционально - можно убрать, если нужна только проверка на наличие 1 и диапазон
+    expected_num = 1
+    for f, num in numbered_files:
+        if num != expected_num:
+            print(f"   ⚠️ Нарушена последовательность номеров: ожидался {expected_num}, найден {num}")
+            return False
+        expected_num += 1
+    
+    return True
 
 def process_group_merge(base_name, files, output_dir):
     """
@@ -217,14 +267,15 @@ def main():
         if merged_count == 0 and copied_count == 0:
             print(f"\n😔 Не удалось обработать ни одного файла.")
             print("ℹ️  Проверьте, что файлы имеют формат: 'имя-номер.pdf'")
+            print("   Для объединения номера должны быть от 1 до 100 и начинаться с 1")
         else:
             total_processed = merged_count + copied_count
             print(f"\n🎉 Всего обработано: {total_processed} элементов")
             
         print(f"\n📁 Результаты сохранены в папке:")
         print(f"   📂 {timestamp_dir}")
-        print(f"   ├─ Объединенные файлы: папка 'объединенные'")
-        print(f"   └─ Одиночные файлы: папка 'готовые ранее'")
+        print(f"   ├─ Объединенные файлы: папка 'Объединенные'")
+        print(f"   └─ Одиночные файлы: папка 'Одиночные'")
             
     except KeyboardInterrupt:
         print("\n⏹️ Программа прервана пользователем.")
